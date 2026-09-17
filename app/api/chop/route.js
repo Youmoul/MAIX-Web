@@ -1,5 +1,4 @@
 import { runRunPod } from "../../../lib/runpod";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
