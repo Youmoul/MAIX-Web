@@ -1,38 +1,57 @@
-import { submitJob, jobStatus } from "../../../../lib/runpod";
+import { runRunPod } from "../../../lib/runpod";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-export async function POST(req) {
+export async function POST(request) {
   try {
-    const body = await req.json();
-    if (!body.audio_base64) {
-      return Response.json({ error: "An input song is required for CHOP." }, { status: 400 });
+    const body = await request.json();
+
+    const {
+      audio_base64,
+      filename = "source.wav",
+      chop_mode = "intelligent",
+      slice_count = 16,
+    } = body;
+
+    if (!audio_base64) {
+      return Response.json(
+        {
+          type: "error",
+          error: "A source audio file is required for Chop Mode.",
+        },
+        {
+          status: 400,
+        }
+      );
     }
 
-    const submitted = await submitJob({
+    const result = await runRunPod({
       action: "chop",
-      audio_base64: body.audio_base64,
-      filename: body.filename || "input.wav",
-      chop_mode: body.chop_mode === "equal" ? "equal" : "intelligent",
-      slice_count: Number(body.slice_count || 16),
+      audio_base64,
+      filename,
+      chop_mode,
+      slice_count: Number(slice_count),
     });
 
-    if (!submitted.id) throw new Error("RunPod did not return a job id");
-
-    const deadline = Date.now() + 290000;
-    while (Date.now() < deadline) {
-      const status = await jobStatus(submitted.id);
-      if (status.status === "COMPLETED") return Response.json(status.output);
-      if (["FAILED", "CANCELLED", "TIMED_OUT"].includes(status.status)) {
-        throw new Error(status.error || `RunPod job ${status.status}`);
-      }
-      await sleep(1500);
+    if (result?.type === "error") {
+      return Response.json(result, {
+        status: 400,
+      });
     }
-    throw new Error("Chop is still running. Web request timed out before RunPod finished.");
-  } catch (e) {
-    return Response.json({ error: e.message }, { status: 500 });
+
+    return Response.json(result);
+  } catch (error) {
+    console.error("MAIX chop error:", error);
+
+    return Response.json(
+      {
+        type: "error",
+        error: error?.message || "MAIX chop processing failed.",
+      },
+      {
+        status: 500,
+      }
+    );
   }
 }
